@@ -1,0 +1,978 @@
+ ÉTAPE 1 : Installer les packages nécessaires
+
+  Dans le terminal, à la racine du projet
+  (/home/andrianiavo/RiderProjects/WebApplication2/WebApplication2) :
+
+  # Entity Framework Core pour MySQL
+  dotnet add package Microsoft.EntityFrameworkCore
+  dotnet add package Microsoft.EntityFrameworkCore.Design
+  dotnet add package Pomelo.EntityFrameworkCore.MySql
+
+  # JWT Authentication
+  dotnet add package Microsoft.AspNetCore.Authentication.JwtBearer
+  dotnet add package System.IdentityModel.Tokens.Jwt
+
+  # Password Hashing
+  dotnet add package BCrypt.Net-Next
+
+  # Logging (Serilog - optionnel mais recommandé)
+  dotnet add package Serilog.AspNetCore
+  dotnet add package Serilog.Sinks.File
+  dotnet add package Serilog.Sinks.Console
+
+  ---
+  ÉTAPE 2 : Créer les dossiers
+
+  cd /home/andrianiavo/RiderProjects/WebApplication2/WebApplication2
+
+  mkdir Models DTOs Data Repositories Services Middleware Helpers
+  mkdir DTOs/Auth DTOs/User DTOs/TaskList DTOs/TaskItem
+
+  ---
+  ÉTAPE 3 : Créer les Models (Entités)
+
+  1. Créer Models/TaskStatus.cs
+
+  namespace WebApplication2.Models;
+
+  public enum TaskStatus
+  {
+      Todo = 0,
+      InProgress = 1,
+      Completed = 2
+  }
+
+  2. Créer Models/User.cs
+
+  using System.ComponentModel.DataAnnotations;
+
+  namespace WebApplication2.Models;
+
+  public class User
+  {
+      public int Id { get; set; }
+
+      [Required]
+      [MaxLength(100)]
+      public string Name { get; set; } = string.Empty;
+
+      [Required]
+      [MaxLength(255)]
+      public string Email { get; set; } = string.Empty;
+
+      [Required]
+      public string PasswordHash { get; set; } = string.Empty;
+
+      public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+      // Relations
+      public List<TaskList> TaskLists { get; set; } = new();
+  }
+
+  3. Créer Models/TaskList.cs
+
+  using System.ComponentModel.DataAnnotations;
+
+  namespace WebApplication2.Models;
+
+  public class TaskList
+  {
+      public int Id { get; set; }
+
+      [Required]
+      [MaxLength(200)]
+      public string Title { get; set; } = string.Empty;
+
+      [MaxLength(1000)]
+      public string? Description { get; set; }
+
+      public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+      // Foreign Key
+      public int UserId { get; set; }
+
+      // Relations
+      public User User { get; set; } = null!;
+      public List<TaskItem> Tasks { get; set; } = new();
+  }
+
+  4. Créer Models/TaskItem.cs
+
+  using System.ComponentModel.DataAnnotations;
+
+  namespace WebApplication2.Models;
+
+  public class TaskItem
+  {
+      public int Id { get; set; }
+
+      [Required]
+      [MaxLength(500)]
+      public string Title { get; set; } = string.Empty;
+
+      [MaxLength(2000)]
+      public string? Description { get; set; }
+
+      public TaskStatus Status { get; set; } = TaskStatus.Todo;
+
+      public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+      public DateTime? CompletedAt { get; set; }
+
+      // Foreign Key
+      public int TaskListId { get; set; }
+
+      // Relations
+      public TaskList TaskList { get; set; } = null!;
+  }
+
+  ---
+  ÉTAPE 4 : Créer le DbContext
+
+  Créer Data/AppDbContext.cs
+
+  using Microsoft.EntityFrameworkCore;
+  using WebApplication2.Models;
+
+  namespace WebApplication2.Data;
+
+  public class AppDbContext : DbContext
+  {
+      public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
+      {
+      }
+
+      public DbSet<User> Users { get; set; }
+      public DbSet<TaskList> TaskLists { get; set; }
+      public DbSet<TaskItem> TaskItems { get; set; }
+
+      protected override void OnModelCreating(ModelBuilder modelBuilder)
+      {
+          base.OnModelCreating(modelBuilder);
+
+          // Configuration User
+          modelBuilder.Entity<User>(entity =>
+          {
+              entity.HasKey(e => e.Id);
+              entity.HasIndex(e => e.Email).IsUnique();
+              entity.Property(e => e.Email).IsRequired();
+          });
+
+          // Configuration TaskList
+          modelBuilder.Entity<TaskList>(entity =>
+          {
+              entity.HasKey(e => e.Id);
+
+              entity.HasOne(e => e.User)
+                  .WithMany(u => u.TaskLists)
+                  .HasForeignKey(e => e.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+          });
+
+          // Configuration TaskItem
+          modelBuilder.Entity<TaskItem>(entity =>
+          {
+              entity.HasKey(e => e.Id);
+
+              entity.HasOne(e => e.TaskList)
+                  .WithMany(tl => tl.Tasks)
+                  .HasForeignKey(e => e.TaskListId)
+                  .OnDelete(DeleteBehavior.Cascade);
+          });
+      }
+  }
+
+  ---
+  ÉTAPE 5 : Créer les DTOs
+
+  1. DTOs d'authentification
+
+  DTOs/Auth/RegisterDto.cs
+  using System.ComponentModel.DataAnnotations;
+
+  namespace WebApplication2.DTOs.Auth;
+
+  public class RegisterDto
+  {
+      [Required]
+      [StringLength(100, MinimumLength = 2)]
+      public string Name { get; set; } = string.Empty;
+
+      [Required]
+      [EmailAddress]
+      public string Email { get; set; } = string.Empty;
+
+      [Required]
+      [StringLength(100, MinimumLength = 6)]
+      public string Password { get; set; } = string.Empty;
+  }
+
+  DTOs/Auth/LoginDto.cs
+  using System.ComponentModel.DataAnnotations;
+
+  namespace WebApplication2.DTOs.Auth;
+
+  public class LoginDto
+  {
+      [Required]
+      [EmailAddress]
+      public string Email { get; set; } = string.Empty;
+
+      [Required]
+      public string Password { get; set; } = string.Empty;
+  }
+
+  DTOs/Auth/AuthResponseDto.cs
+  namespace WebApplication2.DTOs.Auth;
+
+  public class AuthResponseDto
+  {
+      public string Token { get; set; } = string.Empty;
+      public int UserId { get; set; }
+      public string Name { get; set; } = string.Empty;
+      public string Email { get; set; } = string.Empty;
+  }
+
+  2. DTOs User
+
+  DTOs/User/UserDto.cs
+  namespace WebApplication2.DTOs.User;
+
+  public class UserDto
+  {
+      public int Id { get; set; }
+      public string Name { get; set; } = string.Empty;
+      public string Email { get; set; } = string.Empty;
+      public DateTime CreatedAt { get; set; }
+  }
+
+  3. DTOs TaskList
+
+  DTOs/TaskList/CreateTaskListDto.cs
+  using System.ComponentModel.DataAnnotations;
+
+  namespace WebApplication2.DTOs.TaskList;
+
+  public class CreateTaskListDto
+  {
+      [Required]
+      [StringLength(200, MinimumLength = 1)]
+      public string Title { get; set; } = string.Empty;
+
+      [StringLength(1000)]
+      public string? Description { get; set; }
+  }
+
+  DTOs/TaskList/TaskListDto.cs
+  namespace WebApplication2.DTOs.TaskList;
+
+  public class TaskListDto
+  {
+      public int Id { get; set; }
+      public string Title { get; set; } = string.Empty;
+      public string? Description { get; set; }
+      public DateTime CreatedAt { get; set; }
+      public int TaskCount { get; set; }
+  }
+
+  4. DTOs TaskItem
+
+  DTOs/TaskItem/CreateTaskItemDto.cs
+  using System.ComponentModel.DataAnnotations;
+  using WebApplication2.Models;
+
+  namespace WebApplication2.DTOs.TaskItem;
+
+  public class CreateTaskItemDto
+  {
+      [Required]
+      [StringLength(500, MinimumLength = 1)]
+      public string Title { get; set; } = string.Empty;
+
+      [StringLength(2000)]
+      public string? Description { get; set; }
+
+      public TaskStatus Status { get; set; } = TaskStatus.Todo;
+  }
+
+  DTOs/TaskItem/TaskItemDto.cs
+  using WebApplication2.Models;
+
+  namespace WebApplication2.DTOs.TaskItem;
+
+  public class TaskItemDto
+  {
+      public int Id { get; set; }
+      public string Title { get; set; } = string.Empty;
+      public string? Description { get; set; }
+      public TaskStatus Status { get; set; }
+      public DateTime CreatedAt { get; set; }
+      public DateTime? CompletedAt { get; set; }
+      public int TaskListId { get; set; }
+  }
+
+  ---
+  ÉTAPE 6 : Créer le Helper pour le hashing de mot de passe
+
+  Helpers/PasswordHasher.cs
+  namespace WebApplication2.Helpers;
+
+  public static class PasswordHasher
+  {
+      public static string HashPassword(string password)
+      {
+          return BCrypt.Net.BCrypt.HashPassword(password);
+      }
+
+      public static bool VerifyPassword(string password, string hash)
+      {
+          return BCrypt.Net.BCrypt.Verify(password, hash);
+      }
+  }
+
+  ---
+  ÉTAPE 7 : Créer les Repositories
+
+  1. Interface et implémentation UserRepository
+
+  Repositories/IUserRepository.cs
+  using WebApplication2.Models;
+
+  namespace WebApplication2.Repositories;
+
+  public interface IUserRepository
+  {
+      Task<User?> GetByIdAsync(int id);
+      Task<User?> GetByEmailAsync(string email);
+      Task<User> CreateAsync(User user);
+      Task<bool> EmailExistsAsync(string email);
+  }
+
+  Repositories/UserRepository.cs
+  using Microsoft.EntityFrameworkCore;
+  using WebApplication2.Data;
+  using WebApplication2.Models;
+
+  namespace WebApplication2.Repositories;
+
+  public class UserRepository : IUserRepository
+  {
+      private readonly AppDbContext _context;
+
+      public UserRepository(AppDbContext context)
+      {
+          _context = context;
+      }
+
+      public async Task<User?> GetByIdAsync(int id)
+      {
+          return await _context.Users.FindAsync(id);
+      }
+
+      public async Task<User?> GetByEmailAsync(string email)
+      {
+          return await _context.Users
+              .FirstOrDefaultAsync(u => u.Email == email);
+      }
+
+      public async Task<User> CreateAsync(User user)
+      {
+          _context.Users.Add(user);
+          await _context.SaveChangesAsync();
+          return user;
+      }
+
+      public async Task<bool> EmailExistsAsync(string email)
+      {
+          return await _context.Users.AnyAsync(u => u.Email == email);
+      }
+  }
+
+  2. TaskListRepository
+
+  Repositories/ITaskListRepository.cs
+  using WebApplication2.Models;
+
+  namespace WebApplication2.Repositories;
+
+  public interface ITaskListRepository
+  {
+      Task<List<TaskList>> GetByUserIdAsync(int userId);
+      Task<TaskList?> GetByIdAsync(int id);
+      Task<TaskList> CreateAsync(TaskList taskList);
+      Task UpdateAsync(TaskList taskList);
+      Task DeleteAsync(int id);
+  }
+
+  Repositories/TaskListRepository.cs
+  using Microsoft.EntityFrameworkCore;
+  using WebApplication2.Data;
+  using WebApplication2.Models;
+
+  namespace WebApplication2.Repositories;
+
+  public class TaskListRepository : ITaskListRepository
+  {
+      private readonly AppDbContext _context;
+
+      public TaskListRepository(AppDbContext context)
+      {
+          _context = context;
+      }
+
+      public async Task<List<TaskList>> GetByUserIdAsync(int userId)
+      {
+          return await _context.TaskLists
+              .Include(tl => tl.Tasks)
+              .Where(tl => tl.UserId == userId)
+              .OrderByDescending(tl => tl.CreatedAt)
+              .ToListAsync();
+      }
+
+      public async Task<TaskList?> GetByIdAsync(int id)
+      {
+          return await _context.TaskLists
+              .Include(tl => tl.Tasks)
+              .FirstOrDefaultAsync(tl => tl.Id == id);
+      }
+
+      public async Task<TaskList> CreateAsync(TaskList taskList)
+      {
+          _context.TaskLists.Add(taskList);
+          await _context.SaveChangesAsync();
+          return taskList;
+      }
+
+      public async Task UpdateAsync(TaskList taskList)
+      {
+          _context.TaskLists.Update(taskList);
+          await _context.SaveChangesAsync();
+      }
+
+      public async Task DeleteAsync(int id)
+      {
+          var taskList = await _context.TaskLists.FindAsync(id);
+          if (taskList != null)
+          {
+              _context.TaskLists.Remove(taskList);
+              await _context.SaveChangesAsync();
+          }
+      }
+  }
+
+  3. TaskItemRepository
+
+  Repositories/ITaskItemRepository.cs
+  using WebApplication2.Models;
+
+  namespace WebApplication2.Repositories;
+
+  public interface ITaskItemRepository
+  {
+      Task<List<TaskItem>> GetByTaskListIdAsync(int taskListId);
+      Task<TaskItem?> GetByIdAsync(int id);
+      Task<TaskItem> CreateAsync(TaskItem taskItem);
+      Task UpdateAsync(TaskItem taskItem);
+      Task DeleteAsync(int id);
+  }
+
+  Repositories/TaskItemRepository.cs
+  using Microsoft.EntityFrameworkCore;
+  using WebApplication2.Data;
+  using WebApplication2.Models;
+
+  namespace WebApplication2.Repositories;
+
+  public class TaskItemRepository : ITaskItemRepository
+  {
+      private readonly AppDbContext _context;
+
+      public TaskItemRepository(AppDbContext context)
+      {
+          _context = context;
+      }
+
+      public async Task<List<TaskItem>> GetByTaskListIdAsync(int taskListId)
+      {
+          return await _context.TaskItems
+              .Where(ti => ti.TaskListId == taskListId)
+              .OrderBy(ti => ti.CreatedAt)
+              .ToListAsync();
+      }
+
+      public async Task<TaskItem?> GetByIdAsync(int id)
+      {
+          return await _context.TaskItems.FindAsync(id);
+      }
+
+      public async Task<TaskItem> CreateAsync(TaskItem taskItem)
+      {
+          _context.TaskItems.Add(taskItem);
+          await _context.SaveChangesAsync();
+          return taskItem;
+      }
+
+      public async Task UpdateAsync(TaskItem taskItem)
+      {
+          _context.TaskItems.Update(taskItem);
+          await _context.SaveChangesAsync();
+      }
+
+      public async Task DeleteAsync(int id)
+      {
+          var taskItem = await _context.TaskItems.FindAsync(id);
+          if (taskItem != null)
+          {
+              _context.TaskItems.Remove(taskItem);
+              await _context.SaveChangesAsync();
+          }
+      }
+  }
+
+  ---
+  ÉTAPE 8 : Configuration appsettings.json
+
+  Modifier appsettings.json
+  {
+    "ConnectionStrings": {
+      "DefaultConnection": "Server=localhost;Database=todolist_db;User=root;Password=your_password;"
+    },
+    "Jwt": {
+      "Key": "your-super-secret-key-minimum-32-characters-long",
+      "Issuer": "TodoListAPI",
+      "Audience": "TodoListUsers",
+      "ExpirationHours": 24
+    },
+    "Logging": {
+      "LogLevel": {
+        "Default": "Information",
+        "Microsoft.AspNetCore": "Warning",
+        "Microsoft.EntityFrameworkCore": "Warning"
+      }
+    },
+    "AllowedHosts": "*"
+  }
+
+  Modifier appsettings.Development.json
+  {
+    "Logging": {
+      "LogLevel": {
+        "Default": "Information",
+        "Microsoft.AspNetCore": "Information",
+        "Microsoft.EntityFrameworkCore": "Information"
+      }
+    }
+  }
+
+  ---
+  Prochaines étapes (je continue dans le prochain message)
+
+  Je vais continuer avec :
+  - ÉTAPE 9 : Services
+  - ÉTAPE 10 : Middlewares personnalisés
+  - ÉTAPE 11 : Controllers
+  - ÉTAPE 12 : Program.cs complet
+  - ÉTAPE 13 : Migrations et création de la base de données
+  - ÉTAPE 14 : Tests avec des requêtes HTTP
+
+  Es-tu prêt pour la suite ?
+
+> andrianiavo@customer:~/RiderProjects/WebApplication2/WebApplication2$ dotnet add package 
+Microsofot.EntityFrameworkCore.Design
+
+Générer a réussi dans 0,8s
+info : La validation de la chaîne de certificats X.509 utilisera l’offre groupée de certificats du 
+système au '/etc/pki/ca-trust/extracted/pem/objsign-ca-bundle.pem'.
+info : La validation de la chaîne de certificats X.509 utilisera l’offre groupée de certificats de 
+secours au '/home/andrianiavo/.dotnet/sdk/9.0.305/trustedroots/timestampctl.pem'.
+info : Ajout de PackageReference pour le package 'Microsofot.EntityFrameworkCore.Design' dans le 
+projet '/home/andrianiavo/RiderProjects/WebApplication2/WebApplication2/WebApplication2.csproj'.
+info :   GET 
+https://api.nuget.org/v3/registration5-gz-semver2/microsofot.entityframeworkcore.design/index.json
+info :   NotFound 
+https://api.nuget.org/v3/registration5-gz-semver2/microsofot.entityframeworkcore.design/index.json 
+944 ms
+info :   GET 
+https://api.nuget.org/v3/registration5-gz-semver2/microsofot.entityframeworkcore.design/index.json
+info :   NotFound 
+https://api.nuget.org/v3/registration5-gz-semver2/microsofot.entityframeworkcore.design/index.json 
+485 ms
+error: Aucune version n'est disponible pour le package 'Microsofot.EntityFrameworkCore.Design'., 
+pourquoi il y a un probleme lors de l'installation de package? 
+
+● Le problème : Faute de frappe dans le nom du package !
+
+  Tu as écrit Microsofot au lieu de Microsoft (il manque un "f").
+
+  La bonne commande :
+
+  dotnet add package Microsoft.EntityFrameworkCore.Design
+
+  Remarque : Vérifie aussi les autres packages que tu as installés. Voici toutes les commandes
+  correctes :
+
+  # Entity Framework Core pour MySQL
+  dotnet add package Microsoft.EntityFrameworkCore
+  dotnet add package Microsoft.EntityFrameworkCore.Design
+  dotnet add package Pomelo.EntityFrameworkCore.MySql
+
+  # JWT Authentication
+  dotnet add package Microsoft.AspNetCore.Authentication.JwtBearer
+  dotnet add package System.IdentityModel.Tokens.Jwt
+
+  # Password Hashing
+  dotnet add package BCrypt.Net-Next
+
+  # Logging (Serilog)
+  dotnet add package Serilog.AspNetCore
+  dotnet add package Serilog.Sinks.File
+  dotnet add package Serilog.Sinks.Console
+
+  Réessaye avec l'orthographe correcte !
+
+> dans la creation des models, je veux aussi que user a un role(Type) et certains url sont 
+protegés(seulement les type admin peuvent y acceder) 
+
+● Parfait ! Je vais ajuster le plan pour ajouter le système de rôles.
+
+  ---
+  Modifications pour le système de rôles
+
+  ÉTAPE 3 BIS : Ajouter le système de rôles
+
+  1. Créer l'enum Models/UserRole.cs
+
+  namespace WebApplication2.Models;
+
+  public enum UserRole
+  {
+      User = 0,
+      Admin = 1
+  }
+
+  2. Modifier Models/User.cs
+
+  Ajoute la propriété Role :
+
+  using System.ComponentModel.DataAnnotations;
+
+  namespace WebApplication2.Models;
+
+  public class User
+  {
+      public int Id { get; set; }
+
+      [Required]
+      [MaxLength(100)]
+      public string Name { get; set; } = string.Empty;
+
+      [Required]
+      [MaxLength(255)]
+      public string Email { get; set; } = string.Empty;
+
+      [Required]
+      public string PasswordHash { get; set; } = string.Empty;
+
+      public UserRole Role { get; set; } = UserRole.User;  // ← AJOUT
+
+      public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+      // Relations
+      public List<TaskList> TaskLists { get; set; } = new();
+  }
+
+  3. Modifier DTOs/Auth/RegisterDto.cs
+
+  Ajoute le rôle (optionnel lors de l'inscription) :
+
+  using System.ComponentModel.DataAnnotations;
+  using WebApplication2.Models;
+
+  namespace WebApplication2.DTOs.Auth;
+
+  public class RegisterDto
+  {
+      [Required]
+      [StringLength(100, MinimumLength = 2)]
+      public string Name { get; set; } = string.Empty;
+
+      [Required]
+      [EmailAddress]
+      public string Email { get; set; } = string.Empty;
+
+      [Required]
+      [StringLength(100, MinimumLength = 6)]
+      public string Password { get; set; } = string.Empty;
+
+      // Par défaut User, seul un admin peut créer un autre admin
+      public UserRole Role { get; set; } = UserRole.User;
+  }
+
+  4. Modifier DTOs/Auth/AuthResponseDto.cs
+
+  Retourne le rôle dans la réponse d'authentification :
+
+  using WebApplication2.Models;
+
+  namespace WebApplication2.DTOs.Auth;
+
+  public class AuthResponseDto
+  {
+      public string Token { get; set; } = string.Empty;
+      public int UserId { get; set; }
+      public string Name { get; set; } = string.Empty;
+      public string Email { get; set; } = string.Empty;
+      public UserRole Role { get; set; }  // ← AJOUT
+  }
+
+  5. Modifier DTOs/User/UserDto.cs
+
+  using WebApplication2.Models;
+
+  namespace WebApplication2.DTOs.User;
+
+  public class UserDto
+  {
+      public int Id { get; set; }
+      public string Name { get; set; } = string.Empty;
+      public string Email { get; set; } = string.Empty;
+      public UserRole Role { get; set; }  // ← AJOUT
+      public DateTime CreatedAt { get; set; }
+  }
+
+  ---
+  Utilisation des rôles dans les Services
+
+  Dans Services/AuthService.cs (tu créeras ce fichier plus tard)
+
+  Lors de la génération du token JWT, inclure le rôle :
+
+  // Exemple de génération de token avec rôle
+  private string GenerateJwtToken(User user)
+  {
+      var claims = new[]
+      {
+          new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+          new Claim(ClaimTypes.Email, user.Email),
+          new Claim(ClaimTypes.Name, user.Name),
+          new Claim(ClaimTypes.Role, user.Role.ToString())  // ← IMPORTANT
+      };
+
+      // ... reste du code de génération JWT
+  }
+
+  ---
+  Protection des endpoints avec rôles
+
+  Dans les Controllers
+
+  Exemples de protection par rôle :
+
+  // Accessible à tous les utilisateurs authentifiés
+  [Authorize]
+  [HttpGet("my-lists")]
+  public async Task<IActionResult> GetMyLists()
+  {
+      // ...
+  }
+
+  // Accessible UNIQUEMENT aux admins
+  [Authorize(Roles = "Admin")]
+  [HttpGet("all-users")]
+  public async Task<IActionResult> GetAllUsers()
+  {
+      // ...
+  }
+
+  // Accessible aux admins ET aux users
+  [Authorize(Roles = "Admin,User")]
+  [HttpGet("something")]
+  public async Task<IActionResult> Something()
+  {
+      // ...
+  }
+
+  // Pas de protection (public)
+  [HttpGet("health")]
+  public IActionResult Health()
+  {
+      return Ok("API is running");
+  }
+
+  ---
+  Exemples concrets d'endpoints protégés
+
+  Controllers/UsersController.cs
+
+  using Microsoft.AspNetCore.Authorization;
+  using Microsoft.AspNetCore.Mvc;
+  using WebApplication2.Services;
+
+  namespace WebApplication2.Controllers;
+
+  [ApiController]
+  [Route("api/[controller]")]
+  public class UsersController : ControllerBase
+  {
+      private readonly IUserService _userService;
+
+      public UsersController(IUserService userService)
+      {
+          _userService = userService;
+      }
+
+      // ✅ ADMIN UNIQUEMENT - Voir tous les utilisateurs
+      [Authorize(Roles = "Admin")]
+      [HttpGet]
+      public async Task<IActionResult> GetAllUsers()
+      {
+          var users = await _userService.GetAllAsync();
+          return Ok(users);
+      }
+
+      // ✅ USER ou ADMIN - Voir son propre profil
+      [Authorize]
+      [HttpGet("me")]
+      public async Task<IActionResult> GetMyProfile()
+      {
+          var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+          var user = await _userService.GetByIdAsync(userId);
+          return Ok(user);
+      }
+
+      // ✅ ADMIN UNIQUEMENT - Supprimer un utilisateur
+      [Authorize(Roles = "Admin")]
+      [HttpDelete("{id}")]
+      public async Task<IActionResult> DeleteUser(int id)
+      {
+          await _userService.DeleteAsync(id);
+          return NoContent();
+      }
+  }
+
+  Controllers/TaskListsController.cs
+
+  using Microsoft.AspNetCore.Authorization;
+  using Microsoft.AspNetCore.Mvc;
+  using System.Security.Claims;
+  using WebApplication2.DTOs.TaskList;
+  using WebApplication2.Services;
+
+  namespace WebApplication2.Controllers;
+
+  [ApiController]
+  [Route("api/[controller]")]
+  [Authorize]  // ← Tous les endpoints nécessitent authentification
+  public class TaskListsController : ControllerBase
+  {
+      private readonly ITaskListService _taskListService;
+
+      public TaskListsController(ITaskListService taskListService)
+      {
+          _taskListService = taskListService;
+      }
+
+      // ✅ USER ou ADMIN - Voir ses propres listes
+      [HttpGet]
+      public async Task<IActionResult> GetMyTaskLists()
+      {
+          var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+          var lists = await _taskListService.GetByUserIdAsync(userId);
+          return Ok(lists);
+      }
+
+      // ✅ ADMIN UNIQUEMENT - Voir toutes les listes de tous les users
+      [Authorize(Roles = "Admin")]
+      [HttpGet("all")]
+      public async Task<IActionResult> GetAllTaskLists()
+      {
+          var lists = await _taskListService.GetAllAsync();
+          return Ok(lists);
+      }
+
+      // ✅ USER ou ADMIN - Créer sa propre liste
+      [HttpPost]
+      public async Task<IActionResult> CreateTaskList([FromBody] CreateTaskListDto dto)
+      {
+          var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+          var list = await _taskListService.CreateAsync(userId, dto);
+          return CreatedAtAction(nameof(GetTaskList), new { id = list.Id }, list);
+      }
+
+      // ✅ USER ou ADMIN - Voir une liste spécifique (vérifier ownership)
+      [HttpGet("{id}")]
+      public async Task<IActionResult> GetTaskList(int id)
+      {
+          var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+          var userRole = User.FindFirst(ClaimTypes.Role)!.Value;
+
+          var list = await _taskListService.GetByIdAsync(id);
+          if (list == null)
+              return NotFound();
+
+          // Admin peut voir toutes les listes, User seulement les siennes
+          if (userRole != "Admin" && list.UserId != userId)
+              return Forbid();
+
+          return Ok(list);
+      }
+  }
+
+  ---
+  Middleware personnalisé pour logger le rôle
+
+  Dans Middleware/RequestLoggingMiddleware.cs
+
+  Tu peux logger le rôle de l'utilisateur dans tes logs :
+
+  public async Task InvokeAsync(HttpContext context)
+  {
+      var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "Anonymous";
+      var userRole = context.User.FindFirst(ClaimTypes.Role)?.Value ?? "None";
+
+      _logger.LogInformation(
+          "Request: {Method} {Path} | User: {UserId} | Role: {Role}",
+          context.Request.Method,
+          context.Request.Path,
+          userId,
+          userRole
+      );
+
+      await _next(context);
+  }
+
+  ---
+  Récapitulatif des modifications
+
+  ✅ Models :
+  - Ajouter UserRole.cs (enum)
+  - Modifier User.cs (ajouter propriété Role)
+
+  ✅ DTOs :
+  - Modifier RegisterDto.cs (ajouter Role)
+  - Modifier AuthResponseDto.cs (ajouter Role)
+  - Modifier UserDto.cs (ajouter Role)
+
+  ✅ Services :
+  - Dans AuthService.cs, inclure le rôle dans le token JWT
+
+  ✅ Controllers :
+  - Utiliser [Authorize(Roles = "Admin")] pour les endpoints admin uniquement
+  - Utiliser [Authorize] pour tous les utilisateurs authentifiés
+  - Vérifier l'ownership dans les endpoints (un user ne peut voir que ses propres données)
+
+  ---
+  Exemples de routes protégées
+
+  | Endpoint                | Authentification | Rôle requis   | Description             |
+  |-------------------------|------------------|---------------|-------------------------|
+  | POST /api/auth/register | ❌ Non            | -             | Inscription publique    |
+  | POST /api/auth/login    | ❌ Non            | -             | Connexion publique      |
+  | GET /api/users/me       | ✅ Oui            | User ou Admin | Voir son profil         |
+  | GET /api/users          | ✅ Oui            | Admin         | Voir tous les users     |
+  | DELETE /api/users/{id}  | ✅ Oui            | Admin         | Supprimer un user       |
+  | GET /api/tasklists      | ✅ Oui            | User ou Admin | Voir ses propres listes |
+  | GET /api/tasklists/all  | ✅ Oui            | Admin         | Voir toutes les listes  |
+  | POST /api/tasklists     | ✅ Oui            | User ou Admin | Créer une liste         |
+
+  ---
+  Ces modifications sont-elles claires ? Je continue avec les Services et la suite ?
