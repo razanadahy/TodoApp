@@ -16,5 +16,5 @@ public class Users
     public string Password { get; set; } = String.Empty;
     public UserRole Role { get; set; } = UserRole.User;
     public DateTime Created { get; set; } = DateTime.UtcNow;
-    public List<Task> TaskList { get; set; } = new();
+    public List<TaskList> TaskList { get; set; } = new();
 }

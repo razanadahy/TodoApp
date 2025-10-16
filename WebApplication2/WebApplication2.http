@@ -1,6 +1,124 @@
-@WebApplication2_HostAddress = http://localhost:5062
 
-GET {{WebApplication2_HostAddress}}/weatherforecast/
-Accept: application/json
+@baseUrl = http://localhost:5062
+@apiUrl = {{baseUrl}}
+@token= eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1laWRlbnRpZmllciI6IjEiLCJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9lbWFpbGFkZHJlc3MiOiJhZG1pbkB0ZXN0LmNvbSIsImh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3dzLzIwMDUvMDUvaWRlbnRpdHkvY2xhaW1zL25hbWUiOiJBZG1pbiBVc2VyIiwiaHR0cDovL3NjaGVtYXMubWljcm9zb2Z0LmNvbS93cy8yMDA4LzA2L2lkZW50aXR5L2NsYWltcy9yb2xlIjoiQWRtaW4iLCJleHAiOjE3NjA2MTU5MjYsImlzcyI6IlRvZG9MaXN0QVBJIiwiYXVkIjoiVG9kb0xpc3RVc2VycyJ9.frf2mHO4BQQJBuX6s70SdxUThxSZuVbJ9VnxsAB9TcQ
+@token2= eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1laWRlbnRpZmllciI6IjIiLCJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9lbWFpbGFkZHJlc3MiOiJqb2huQHRlc3QuY29tIiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZSI6IkpvaG4gRG9lIiwiaHR0cDovL3NjaGVtYXMubWljcm9zb2Z0LmNvbS93cy8yMDA4LzA2L2lkZW50aXR5L2NsYWltcy9yb2xlIjoiVXNlciIsImV4cCI6MTc2MDYxNTQyMywiaXNzIjoiVG9kb0xpc3RBUEkiLCJhdWQiOiJUb2RvTGlzdFVzZXJzIn0.VpovFwMlGVH6C8o0rAPj13KZB24ACEgb1CpoFabCH2g
+
+GET {{baseUrl}}/
+###
+POST {{apiUrl}}/Auth/register
+Content-Type: application/json
+
+{
+    "userName": "Admin User",
+    "email": "admin@test.com",
+    "password": "Admin123456",
+    "role": 1
+}
+###
+
+POST {{apiUrl}}/Auth/register
+Content-Type: application/json
+
+{
+"userName": "John Doe",
+"email": "john@test.com",
+"password": "Password123",
+"role": 0
+}
+
+### 3. Login
+POST {{apiUrl}}/Auth/login
+Content-Type: application/json
+
+{
+"email": "admin@test.com",
+"password": "Admin123456"
+}
+
+### 4. Login
+POST {{apiUrl}}/Auth/login
+Content-Type: application/json
+
+{
+  "email": "john@test.com",
+  "password": "Password123"
+}
+
+### 4. Get All Users (Admin - devrait réussir)
+GET {{apiUrl}}/Auth/users
+Authorization: Bearer {{token}}
+
+###
+
+### 5. Get All Users (Normal User - devrait échouer avec 403 Forbidden)
+GET {{apiUrl}}/Auth/users
+Authorization: Bearer {{token2}}
+
+###
+
+### ========== TASK LISTS ENDPOINTS ==========
+
+### 6. Get My Task Lists (Admin)
+GET {{apiUrl}}/api/TaskLists
+Authorization: Bearer {{token}}
+
+###
+
+### 7. Get My Task Lists (John Doe)
+GET {{apiUrl}}/api/TaskLists
+Authorization: Bearer {{token2}}
+
+###
+
+### 8. Create Task List (Admin)
+POST {{apiUrl}}/api/TaskLists
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "title": "Liste Admin - Travail",
+  "description": "Mes tâches de travail importantes"
+}
+
+###
+
+### 9. Create Task List (John Doe)
+POST {{apiUrl}}/api/TaskLists
+Content-Type: application/json
+Authorization: Bearer {{token2}}
+
+{
+  "title": "Liste John - Personnel",
+  "description": "Mes tâches personnelles"
+}
+
+###
+
+### 10. Create Task Item dans une liste (Admin - remplace taskListId par un ID réel)
+POST {{apiUrl}}/api/TaskLists/items
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "title": "Finir le rapport",
+  "description": "Rapport mensuel à terminer",
+  "status": 0,
+  "taskListId": 1
+}
+
+###
+
+### 11. Create Task Item dans une liste (John - remplace taskListId par un ID réel)
+POST {{apiUrl}}/api/TaskLists/items
+Content-Type: application/json
+Authorization: Bearer {{token2}}
+
+{
+  "title": "Faire les courses",
+  "description": "Acheter du lait et du pain",
+  "status": 0,
+  "taskListId": 2
+}
 
 ###
