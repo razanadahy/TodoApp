@@ -1019,4 +1019,75 @@ protegés(seulement les type admin peuvent y acceder)
             }
         }
     }
+    
+  Puis dans Program.cs, ajouter :
+
+  app.UseMiddleware<RequestLoggingMiddleware>();
+
   
+  
+  
+ Vous pouvez aussi appliquer CORS directement sur les contrôleurs ou actions :
+
+  // Sur un contrôleur entier
+  [EnableCors("AllowFrontend")]
+  public class VisitController : ControllerBase
+  {
+      // Tous les endpoints utilisent la politique "AllowFrontend"
+  }
+
+  // Sur une action spécifique
+  [EnableCors("SpecialPolicy")]
+  [HttpGet("special")]
+  public IActionResult SpecialEndpoint()
+  {
+      return Ok();
+  }
+
+  // Désactiver CORS pour une action
+  [DisableCors]
+  [HttpGet("no-cors")]
+  public IActionResult NoCorsEndpoint()
+  {
+      return Ok();
+  }
+
+  Configuration recommandée pour votre projet
+
+  builder.Services.AddCors(options =>
+  {
+      options.AddPolicy("AllowFrontend", policy =>
+      {
+          var allowedOrigins = builder.Environment.IsDevelopment()
+              ? new[] { "http://localhost:3000", "http://localhost:3001" }
+              : new[] { "https://aris-cc.com", "https://www.aris-cc.com" };
+
+          policy.WithOrigins(allowedOrigins)
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                .AllowCredentials()
+                .SetPreflightMaxAge(TimeSpan.FromMinutes(10));
+      });
+  });
+
+  Ordre d'exécution important
+
+  CORS doit être placé avant Authorization mais après les middlewares de diagnostic :
+
+  app.UseHttpsRedirection();     // 1. HTTPS redirect
+  app.UseCors("AllowFrontend");  // 2. CORS (important : avant Authorization!)
+  app.UseAuthentication();        // 3. Authentication
+  app.UseAuthorization();         // 4. Authorization
+  app.MapControllers();           // 5. Routing
+
+  Déboguer les problèmes CORS
+
+  Si vous avez des erreurs CORS, vérifiez :
+
+  1. L'origine dans la requête correspond exactement (http vs https, port inclus)
+  2. UseCors() est appelé avant UseAuthorization()
+  3. Vous n'utilisez pas AllowAnyOrigin() avec AllowCredentials()
+  4. Les headers et méthodes sont autorisés dans votre politique
+
+  Voulez-vous que je modifie votre configuration CORS actuelle pour la rendre plus robuste
+   ?
