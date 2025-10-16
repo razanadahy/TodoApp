@@ -919,6 +919,7 @@ protegés(seulement les type admin peuvent y acceder)
 
   ---
   Middleware personnalisé pour logger le rôle
+  
 
   Dans Middleware/RequestLoggingMiddleware.cs
 
@@ -976,3 +977,46 @@ protegés(seulement les type admin peuvent y acceder)
 
   ---
   Ces modifications sont-elles claires ? Je continue avec les Services et la suite ?
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  namespace VisitTracker.Middlewares
+    {
+        public class RequestLoggingMiddleware
+        {
+            private readonly RequestDelegate _next;
+  
+            // Le constructeur reçoit le prochain middleware dans le pipeline
+            public RequestLoggingMiddleware(RequestDelegate next)
+            {
+                _next = next;
+            }
+  
+            // La méthode InvokeAsync est appelée pour chaque requête
+            public async Task InvokeAsync(HttpContext context)
+            {
+                // Avant la requête
+                var startTime = DateTime.UtcNow;
+                Console.WriteLine($"[{startTime}] {context.Request.Method} 
+    {context.Request.Path}");
+  
+                // Appel du middleware suivant
+                await _next(context);
+  
+                // Après la requête
+                var duration = DateTime.UtcNow - startTime;
+                Console.WriteLine($"Terminé en {duration.TotalMilliseconds}ms - Status: 
+    {context.Response.StatusCode}");
+            }
+        }
+    }
+  
